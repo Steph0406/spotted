@@ -9,7 +9,9 @@ import 'package:spotted/core/theme/category_style.dart';
 import 'package:spotted/domain/entities/spot.dart';
 import 'package:spotted/domain/repositories/spot_repository.dart';
 import 'package:spotted/presentation/widgets/rating_stars.dart';
+import 'package:spotted/core/utils/formatters.dart';
 import 'package:spotted/services/image_service.dart';
+import 'package:spotted/services/location_service.dart';
 import 'package:spotted/services/speech_service.dart';
 
 /// Acciones posibles sobre la foto del spot.
@@ -19,6 +21,7 @@ enum _ImageAction { camera, gallery, remove }
 ///
 /// - Foto con cámara o galería (GADGET 1).
 /// - Reseña dictada por voz con el micrófono (GADGET 2).
+/// - Ubicación GPS capturada al guardar un spot nuevo (GADGET 3).
 /// - Valida los campos con un [Form] y su GlobalKey.
 /// - Guarda usando el repositorio (abstracción) dentro de try-catch.
 /// - Regresa `true` a la pantalla anterior si se guardó, para que la
@@ -38,6 +41,7 @@ class _SpotFormScreenState extends State<SpotFormScreen> {
   final SpotRepository _repository = ServiceLocator.spotRepository;
   final ImageService _imageService = ServiceLocator.imageService;
   final SpeechService _speechService = ServiceLocator.speechService;
+  final LocationService _locationService = ServiceLocator.locationService;
 
   final _formKey = GlobalKey<FormState>();
 
@@ -50,6 +54,7 @@ class _SpotFormScreenState extends State<SpotFormScreen> {
   bool _isSaving = false;
   bool _isPickingImage = false;
   bool _isListening = false;
+  bool _isLocating = false;
 
   /// Texto que ya había en la reseña antes de empezar a dictar
   /// (lo dictado se agrega al final, no lo reemplaza).
@@ -197,12 +202,16 @@ class _SpotFormScreenState extends State<SpotFormScreen> {
           createdAt: original.createdAt,
         ));
       } else {
+        // GADGET 3: al guardar un spot NUEVO se captura el GPS actual.
+        final location = await _captureLocation();
         await _repository.create(Spot(
           title: title,
           description: description,
           category: _category,
           rating: _rating,
           imagePath: _imagePath,
+          latitude: location?.latitude,
+          longitude: location?.longitude,
           createdAt: DateTime.now(),
         ));
       }
@@ -214,6 +223,20 @@ class _SpotFormScreenState extends State<SpotFormScreen> {
       _showMessage(e.message);
     } finally {
       if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  /// Obtiene la ubicación GPS. Si falla (GPS apagado, sin permiso),
+  /// avisa a la usuaria y regresa null: el spot se guarda sin ubicación.
+  Future<GeoPoint?> _captureLocation() async {
+    setState(() => _isLocating = true);
+    try {
+      return await _locationService.getCurrentLocation();
+    } on AppException catch (e) {
+      if (mounted) _showMessage('${e.message} Se guardará sin ubicación.');
+      return null;
+    } finally {
+      if (mounted) setState(() => _isLocating = false);
     }
   }
 
@@ -326,7 +349,12 @@ class _SpotFormScreenState extends State<SpotFormScreen> {
               ),
             ),
 
-            const SizedBox(height: 28),
+            const SizedBox(height: 20),
+
+            // ---------- Ubicación ----------
+            _LocationInfo(spot: widget.spot),
+
+            const SizedBox(height: 20),
 
             // ---------- Guardar ----------
             FilledButton.icon(
@@ -341,7 +369,11 @@ class _SpotFormScreenState extends State<SpotFormScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.favorite_rounded),
-              label: Text(_isEditing ? 'Guardar cambios' : 'Guardar spot'),
+              label: Text(
+                _isLocating
+                    ? 'Obteniendo ubicación…'
+                    : (_isEditing ? 'Guardar cambios' : 'Guardar spot'),
+              ),
             ),
           ],
         ),
@@ -415,6 +447,42 @@ class _PhotoPicker extends StatelessWidget {
           decoration: const BoxDecoration(gradient: AppTheme.brandGradient),
           child: content,
         ),
+      ),
+    );
+  }
+}
+
+/// Aviso sobre la ubicación GPS del spot.
+class _LocationInfo extends StatelessWidget {
+  final Spot? spot;
+
+  const _LocationInfo({required this.spot});
+
+  @override
+  Widget build(BuildContext context) {
+    final String text;
+    if (spot == null) {
+      text = 'Al guardar, Spotted registrará tu ubicación GPS actual 📍';
+    } else if (spot!.hasLocation) {
+      text = 'Ubicación guardada: '
+          '${Formatters.coordinates(spot!.latitude!, spot!.longitude!)}';
+    } else {
+      text = 'Este spot no tiene ubicación guardada.';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.location_on_rounded,
+              color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text)),
+        ],
       ),
     );
   }
