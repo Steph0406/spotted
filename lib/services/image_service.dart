@@ -54,7 +54,7 @@ class ImagePickerService implements ImageService {
     }
   }
 
-  /// Copia la imagen a: <documentos de la app>/spot_images/spot_<fecha>.jpg
+  /// Copia la imagen a: `documentos_de_la_app/spot_images/spot_FECHA.jpg`
   Future<String> _saveToAppFolder(XFile file) async {
     final docsDir = await getApplicationDocumentsDirectory();
     final imagesDir = Directory(p.join(docsDir.path, 'spot_images'));

@@ -86,10 +86,10 @@ class SpeechToTextService implements SpeechService {
     try {
       await _speech.listen(
         onResult: (result) => onText(result.recognizedWords),
-        localeId: _localeId,
-        listenFor: const Duration(minutes: 1),
-        pauseFor: const Duration(seconds: 4), // se detiene tras 4 s de silencio
         listenOptions: SpeechListenOptions(
+          localeId: _localeId,
+          listenFor: const Duration(minutes: 1),
+          pauseFor: const Duration(seconds: 4), // se detiene tras 4 s de silencio
           partialResults: true, // muestra el texto mientras hablas
           listenMode: ListenMode.dictation,
           cancelOnError: true,
