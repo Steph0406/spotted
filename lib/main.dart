@@ -1,6 +1,25 @@
 import 'package:flutter/material.dart';
 
-void main() {
+import 'package:spotted/data/datasources/spot_local_datasource.dart';
+import 'package:spotted/data/repositories/spot_repository_impl.dart';
+import 'package:spotted/domain/entities/spot.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // 🧪 PRUEBA TEMPORAL DEL PASO 2 (la quitamos en el Paso 3)
+  final repo = SpotRepositoryImpl(SpotLocalDataSource());
+  await repo.create(Spot(
+    title: 'Café de prueba',
+    description: 'Probando SQLite',
+    category: 'Café',
+    rating: 5,
+    createdAt: DateTime.now(),
+  ));
+  final spots = await repo.getAll();
+  debugPrint('✅ SPOTS GUARDADOS: ${spots.length} -> '
+      '${spots.map((s) => s.title).toList()}');
+
   runApp(const MyApp());
 }
 
