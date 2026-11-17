@@ -10,6 +10,7 @@ import 'package:spotted/domain/entities/spot.dart';
 import 'package:spotted/domain/repositories/spot_repository.dart';
 import 'package:spotted/presentation/widgets/rating_stars.dart';
 import 'package:spotted/services/image_service.dart';
+import 'package:spotted/services/speech_service.dart';
 
 /// Acciones posibles sobre la foto del spot.
 enum _ImageAction { camera, gallery, remove }
@@ -17,6 +18,7 @@ enum _ImageAction { camera, gallery, remove }
 /// Formulario para crear o editar un spot.
 ///
 /// - Foto con cámara o galería (GADGET 1).
+/// - Reseña dictada por voz con el micrófono (GADGET 2).
 /// - Valida los campos con un [Form] y su GlobalKey.
 /// - Guarda usando el repositorio (abstracción) dentro de try-catch.
 /// - Regresa `true` a la pantalla anterior si se guardó, para que la
@@ -35,6 +37,7 @@ class _SpotFormScreenState extends State<SpotFormScreen> {
   // Dependencias (abstracciones) obtenidas del ServiceLocator.
   final SpotRepository _repository = ServiceLocator.spotRepository;
   final ImageService _imageService = ServiceLocator.imageService;
+  final SpeechService _speechService = ServiceLocator.speechService;
 
   final _formKey = GlobalKey<FormState>();
 
@@ -46,6 +49,11 @@ class _SpotFormScreenState extends State<SpotFormScreen> {
 
   bool _isSaving = false;
   bool _isPickingImage = false;
+  bool _isListening = false;
+
+  /// Texto que ya había en la reseña antes de empezar a dictar
+  /// (lo dictado se agrega al final, no lo reemplaza).
+  String _textBeforeDictation = '';
 
   bool get _isEditing => widget.spot != null;
 
@@ -63,6 +71,8 @@ class _SpotFormScreenState extends State<SpotFormScreen> {
 
   @override
   void dispose() {
+    // Si sale de la pantalla dictando, apagamos el micrófono.
+    if (_isListening) _speechService.stopListening();
     // Liberar los controladores evita fugas de memoria.
     _titleController.dispose();
     _descriptionController.dispose();
@@ -122,9 +132,45 @@ class _SpotFormScreenState extends State<SpotFormScreen> {
     }
   }
 
+  // ===================== DICTADO (micrófono) =====================
+
+  Future<void> _toggleDictation() async {
+    if (_isListening) {
+      await _speechService.stopListening();
+      if (mounted) setState(() => _isListening = false);
+      return;
+    }
+
+    _textBeforeDictation = _descriptionController.text.trim();
+    try {
+      await _speechService.startListening(
+        onText: (words) {
+          if (!mounted) return;
+          final separator = _textBeforeDictation.isEmpty ? '' : ' ';
+          final newText = '$_textBeforeDictation$separator$words';
+          // Actualiza el campo en vivo y deja el cursor al final.
+          _descriptionController.value = TextEditingValue(
+            text: newText,
+            selection: TextSelection.collapsed(offset: newText.length),
+          );
+        },
+        onStopped: () {
+          if (mounted) setState(() => _isListening = false);
+        },
+      );
+      if (mounted) setState(() => _isListening = true);
+    } on AppException catch (e) {
+      if (mounted) _showMessage(e.message);
+    }
+  }
+
   // ============================ GUARDAR ============================
 
   Future<void> _save() async {
+    if (_isListening) {
+      await _speechService.stopListening();
+      if (mounted) setState(() => _isListening = false);
+    }
     if (!_formKey.currentState!.validate()) return;
     if (_rating == 0) {
       _showMessage('Califica el lugar con al menos 1 estrella ⭐');
@@ -236,7 +282,40 @@ class _SpotFormScreenState extends State<SpotFormScreen> {
             ),
 
             // ---------- Reseña ----------
-            const _SectionTitle('Reseña'),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                const Expanded(child: _SectionTitle('Reseña')),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: _isListening
+                      ? FilledButton.icon(
+                          onPressed: _toggleDictation,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.redAccent,
+                          ),
+                          icon: const Icon(Icons.stop_rounded),
+                          label: const Text('Detener'),
+                        )
+                      : FilledButton.tonalIcon(
+                          onPressed: _toggleDictation,
+                          icon: const Icon(Icons.mic_rounded),
+                          label: const Text('Dictar'),
+                        ),
+                ),
+              ],
+            ),
+            if (_isListening)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.graphic_eq_rounded, color: Colors.redAccent),
+                    SizedBox(width: 6),
+                    Text('Escuchando… habla ahora 🎙️'),
+                  ],
+                ),
+              ),
             TextFormField(
               controller: _descriptionController,
               minLines: 3,
