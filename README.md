@@ -1,4 +1,4 @@
-# Spotted ✨ — Diario de lugares bonitos
+# Spotted  — Diario de lugares bonitos
 
 App móvil desarrollada en **Flutter** para la materia **Programación para Dispositivos Móviles (Parcial 2)**.
 
